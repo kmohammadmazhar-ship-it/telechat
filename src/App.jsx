@@ -206,15 +206,25 @@ function App() {
       if (currentUser) {
         setUser(currentUser);
         let uName = currentUser.displayName; 
-        if (!uName) {
+
+        // 🌟 JADOO YAHAN HAI: Auto Edit / Cleanup Name
+        if (uName) {
+            uName = uName.replace(/\s+/g, '').toLowerCase(); // saare spaces hat gaye aur lower case ban gaya
+        } else {
             if (currentUser.email) { uName = currentUser.email.split('@')[0].toLowerCase(); } 
             else { uName = "user_" + Math.floor(Math.random() * 100000); }
+        }
+
+        // Firebase Auth Profile Update
+        if (currentUser.displayName !== uName) {
             updateProfile(currentUser, { displayName: uName }).catch(()=>{});
         }
+        
         setUsername(uName);
 
         const userRef = doc(db, 'users', uName);
         const snap = await getDoc(userRef);
+        
         if (!snap.exists()) {
              await setDoc(userRef, { 
                 username: uName, email: currentUser.email || null, phoneNumber: currentUser.phoneNumber || null, 
@@ -226,6 +236,7 @@ function App() {
              const data = snap.data();
              if(data.about) setAboutMe(data.about);
              if(data.archivedChats) setArchivedChats(data.archivedChats);
+             if(data.pfp) setPfp(data.pfp);
         }
       } else {
         setUser(null); setUsername(''); setPfp(null); setContacts([]); setAboutMe('Available'); setArchivedChats([]);
