@@ -128,7 +128,7 @@ function App() {
   const [infoTab, setInfoTab] = useState('media');
   const [replyTo, setReplyTo] = useState(null);
   const [blockedContacts, setBlockedContacts] = useState([]);
-  const [archivedChats, setArchivedChats] = useState([]); // 🌟 NEW: Archived Chats State
+  const [archivedChats, setArchivedChats] = useState([]); 
   const [privacySettings, setPrivacySettings] = useState({ lastSeen: true, readReceipts: true });
   const [chatWallpaper, setChatWallpaper] = useState(localStorage.getItem('tcWallpaper') || 'none');
 
@@ -160,7 +160,9 @@ function App() {
 
   const messagesEndRef = useRef(null);
   let contactTouchTimer = null;
-  const safeSearchQuery = searchQuery?.toLowerCase()?.trim() || "";
+  
+  // Clean user search input (removes all spaces and makes lowercase)
+  const safeSearchQuery = searchQuery?.replace(/\s+/g, '')?.toLowerCase() || "";
 
   const scrollToBottom = useCallback(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), []);
   useEffect(() => { scrollToBottom(); }, [currentMessages, scrollToBottom]);
@@ -205,18 +207,12 @@ function App() {
       setAppLoaded(true);
       if (currentUser) {
         setUser(currentUser);
+        
+        // 🌟 JADOO YAHAN HAI: Original Username jaisa hai waisa hi rakho!
         let uName = currentUser.displayName; 
-
-        // 🌟 JADOO YAHAN HAI: Auto Edit / Cleanup Name
-        if (uName) {
-            uName = uName.replace(/\s+/g, '').toLowerCase(); // saare spaces hat gaye aur lower case ban gaya
-        } else {
-            if (currentUser.email) { uName = currentUser.email.split('@')[0].toLowerCase(); } 
-            else { uName = "user_" + Math.floor(Math.random() * 100000); }
-        }
-
-        // Firebase Auth Profile Update
-        if (currentUser.displayName !== uName) {
+        if (!uName) {
+            if (currentUser.email) { uName = currentUser.email.split('@')[0]; } 
+            else { uName = "User_" + Math.floor(Math.random() * 100000); }
             updateProfile(currentUser, { displayName: uName }).catch(()=>{});
         }
         
@@ -255,7 +251,7 @@ function App() {
             if (data.contacts) setContacts(data.contacts);
             if (data.groups) setGroups(data.groups);
             if (data.blockedContacts) { setBlockedContacts(data.blockedContacts); localStorage.setItem('tcBlockedContacts', JSON.stringify(data.blockedContacts)); }
-            if (data.archivedChats) setArchivedChats(data.archivedChats); // Sync Archives
+            if (data.archivedChats) setArchivedChats(data.archivedChats);
             if (data.privacy) setPrivacySettings(data.privacy);
             if (data.about) setAboutMe(data.about);
         }
@@ -323,14 +319,27 @@ function App() {
     return () => unsubStories();
   }, [user, username]);
 
+  // 🌟 ULTRA SMART SEARCH ENGINE 🌟
   useEffect(() => {
     const fetchSearch = async () => {
-      if (safeSearchQuery.length < 2) { setGlobalSearchResults([]); return; }
+      if (safeSearchQuery.length < 1) { setGlobalSearchResults([]); return; }
       try {
           let results = [];
-          const qName = query(collection(db, 'users'), where('username', '>=', safeSearchQuery), where('username', '<=', safeSearchQuery + '\uf8ff'), limit(10));
+          // Fetch limit ko bada kar diya taaki sab log mil jayein
+          const qName = query(collection(db, 'users'), limit(150));
           const nameSnap = await getDocs(qName);
-          nameSnap.forEach(d => { if(d.data().username !== username) results.push(d.data()); });
+
+          nameSnap.forEach(d => {
+              const data = d.data();
+              if(data.username) {
+                  // Database ke naam se bhi background mein spaces hata diye
+                  const dbNameClean = data.username.replace(/\s+/g, '').toLowerCase();
+                  
+                  if(dbNameClean.includes(safeSearchQuery) && data.username !== username) {
+                      results.push(data);
+                  }
+              }
+          });
           setGlobalSearchResults(results);
       } catch(e) {}
     };
@@ -368,9 +377,8 @@ function App() {
     return () => unsubscribeMsg();
   }, [user, chatWith.name, chatWith.type, username, privacySettings.readReceipts, getChatId]);
 
-  // 🌟 NEW FEATURE: Archive Toggle
   const toggleArchive = async (contactName) => {
-    if(contactName === username) return; // Cant archive self cloud
+    if(contactName === username) return;
     let newList;
     if(archivedChats.includes(contactName)) {
         newList = archivedChats.filter(c => c !== contactName);
@@ -692,8 +700,9 @@ function App() {
   };
 
   const saveProfile = async () => { 
-    if(!tempName.trim()) return showToast("Name cannot be empty");
-    const finalName = tempName.replace(/\s+/g, '').toLowerCase(); 
+    const finalName = tempName.trim(); 
+    if(!finalName) return showToast("Name cannot be empty");
+    
     if(finalName !== username) { 
         const checkDoc = await getDoc(doc(db, 'users', finalName)); 
         if(checkDoc.exists()) return showToast("Username taken! Try another."); 
@@ -747,7 +756,6 @@ function App() {
                  </div>
          )
      } else if (sidebarTab === 'archived') {
-         // 🌟 NEW: ARCHIVED CHATS VIEW 🌟
          return (
              <>
                  <div className="tc-archived-header" onClick={() => setSidebarTab('chats')}>
@@ -787,7 +795,6 @@ function App() {
      } else {
          return (
              <>
-               {/* 🌟 NEW: ARCHIVED TILE IN MAIN LIST 🌟 */}
                {!searchQuery && archivedChats.length > 0 && (
                    <div className="tc-archived-tile-main" onClick={() => setSidebarTab('archived')}>
                        <div className="arch-icon"><IoArchiveOutline size={20}/></div>
@@ -822,7 +829,11 @@ function App() {
                   </div>
                )}
 
-               {groups.filter(g => !archivedChats.includes(g.name) && (g.name?.toLowerCase() || "").includes(safeSearchQuery) && g.members?.includes(username)).map((g, i) => (
+               {groups.filter(g => {
+                   if (archivedChats.includes(g.name) || !g.members?.includes(username)) return false;
+                   const cleanGroup = (g.name || "").replace(/\s+/g, '').toLowerCase();
+                   return cleanGroup.includes(safeSearchQuery);
+               }).map((g, i) => (
                   <div key={'group_'+i} className={`tc-chat-tile ${chatWith.name === g.name ? 'active' : ''}`} onClick={() => { setChatWith({ name: g.name, type: 'group', pfp: g.icon, desc: `${g.members?.length || 0} members` }); setInfoTab('members'); }}>
                       <div className="tc-tile-avatar group">{g.icon ? <img src={g.icon} alt="G" /> : g.name[0]?.toUpperCase() || "?"}</div>
                       <div className="tc-tile-info">
@@ -832,7 +843,11 @@ function App() {
                   </div>
                ))}
 
-               {contacts.filter(c => c.name !== username && !archivedChats.includes(c.name) && (c.name?.toLowerCase() || "").includes(safeSearchQuery)).map((c, i) => (
+               {contacts.filter(c => {
+                   if(c.name === username || archivedChats.includes(c.name)) return false;
+                   const cleanContact = (c.name || "").replace(/\s+/g, '').toLowerCase();
+                   return cleanContact.includes(safeSearchQuery);
+               }).map((c, i) => (
                   <div key={'contact_'+i} className={`tc-chat-tile ${chatWith.name === c.name ? 'active' : ''}`} 
                        onClick={() => { setChatWith({ name: c.name, type: 'contact', pfp: c.pfp, desc: c.about || "Tap to chat" }); setInfoTab('media'); }}
                        onContextMenu={(e) => { e.preventDefault(); handleRemoveContact(c.name); }}
@@ -848,13 +863,13 @@ function App() {
                   </div>
                ))}
                
-               {searchQuery && globalSearchResults.length === 0 && !contacts.find(c => (c.name?.toLowerCase() || "").includes(safeSearchQuery)) && !groups.find(g => (g.name?.toLowerCase() || "").includes(safeSearchQuery)) && (
+               {searchQuery && globalSearchResults.length === 0 && !contacts.find(c => (c.name || "").replace(/\s+/g, '').toLowerCase().includes(safeSearchQuery)) && !groups.find(g => (g.name || "").replace(/\s+/g, '').toLowerCase().includes(safeSearchQuery)) && (
                   <div style={{padding: '20px', textAlign: 'center', color: '#888', fontSize: '14px'}}>No users found matching "{searchQuery}"</div>
                )}
              </>
          )
      }
-  }, [sidebarTab, username, searchQuery, globalSearchResults, groups, contacts, chatWith, unreadCounts, pfp, archivedChats]);
+  }, [sidebarTab, username, searchQuery, safeSearchQuery, globalSearchResults, groups, contacts, chatWith, unreadCounts, pfp, archivedChats]);
 
   const memoizedMessages = useMemo(() => {
       if (chatWith.name === "Select a chat") {
@@ -1124,7 +1139,7 @@ function App() {
                 </div>
                 <div className="tc-form-group">
                    <label>Username</label>
-                   <input type="text" value={tempName} onChange={(e) => setTempName(e.target.value.toLowerCase().replace(/\s/g, ''))} className="tc-input-modern" />
+                   <input type="text" value={tempName} onChange={(e) => setTempName(e.target.value)} className="tc-input-modern" />
                 </div>
                 <div className="tc-form-group" style={{marginTop: '15px'}}>
                    <label>About (Bio)</label>
@@ -1263,7 +1278,6 @@ function App() {
                     <IoEllipsisVertical size={24} className="tc-h-icon" onClick={() => chatWith.name !== "Select a chat" && setShowMenuDropdown(!showMenuDropdown)} />
                     {showMenuDropdown && (
                         <div className="tc-dropdown-menu">
-                           {/* 🌟 NEW FEATURE: Archive Menu Option */}
                            {chatWith.name !== username && chatWith.name !== "Select a chat" && (
                                <div onClick={() => { toggleArchive(chatWith.name); setShowMenuDropdown(false); }}>
                                    {archivedChats.includes(chatWith.name) ? 'Unarchive Chat' : 'Archive Chat'}
