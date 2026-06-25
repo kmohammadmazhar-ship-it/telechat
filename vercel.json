@@ -1,8 +1,0 @@
-{
-  "build": {
-    "env": {
-      "CI": "false"
-    }
-  },
-  "buildCommand": "chmod +x ./node_modules/.bin/vite && npm run build"
-}
