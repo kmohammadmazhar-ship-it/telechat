@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "941917265090",
+    "project_id": "telechat-2dead",
+    "storage_bucket": "telechat-2dead.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:941917265090:android:605372bf5eb85c33412f5b",
+        "android_client_info": {
+          "package_name": "com.telechat.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "941917265090-uh3ohegkhgbj1umhughurlbch1l973ks.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.telechat.app",
+            "certificate_hash": "496d6fd398a9baebfb40c8fcd3a1ba41416b4d7e"
+          }
+        },
+        {
+          "client_id": "941917265090-vofpl2d9ue7q9dse05qmibue8f3pnk58.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD17suyg6GkfRJp75VG98vUJquYag9ZSC0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "941917265090-vofpl2d9ue7q9dse05qmibue8f3pnk58.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

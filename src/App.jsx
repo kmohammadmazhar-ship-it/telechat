@@ -208,7 +208,6 @@ function App() {
       if (currentUser) {
         setUser(currentUser);
         
-        // 🌟 JADOO YAHAN HAI: Original Username jaisa hai waisa hi rakho!
         let uName = currentUser.displayName; 
         if (!uName) {
             if (currentUser.email) { uName = currentUser.email.split('@')[0]; } 
@@ -325,16 +324,13 @@ function App() {
       if (safeSearchQuery.length < 1) { setGlobalSearchResults([]); return; }
       try {
           let results = [];
-          // Fetch limit ko bada kar diya taaki sab log mil jayein
           const qName = query(collection(db, 'users'), limit(150));
           const nameSnap = await getDocs(qName);
 
           nameSnap.forEach(d => {
               const data = d.data();
               if(data.username) {
-                  // Database ke naam se bhi background mein spaces hata diye
                   const dbNameClean = data.username.replace(/\s+/g, '').toLowerCase();
-                  
                   if(dbNameClean.includes(safeSearchQuery) && data.username !== username) {
                       results.push(data);
                   }
@@ -956,7 +952,8 @@ function App() {
   }
 
   return (
-    <div className={`tc-app ${isDarkMode ? 'dark-mode' : ''}`}>
+    // 🌟 ADDED chat-active CLASS FOR MOBILE TRANSITION 🌟
+    <div className={`tc-app ${isDarkMode ? 'dark-mode' : ''} ${chatWith.name !== "Select a chat" ? 'chat-active' : ''}`}>
       
       {toastMsg && (
           <div className="tc-toast-notification">
@@ -1261,6 +1258,11 @@ function App() {
 
         <div className="tc-main" style={{ position: 'relative' }}>
             <div className="tc-chat-header">
+                {/* 🌟 MOBILE BACK BUTTON 🌟 */}
+                <div className="tc-mobile-back" onClick={() => { setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); }}>
+                    <IoArrowUndoOutline size={26} />
+                </div>
+
                 <div className="tc-header-profile" onClick={() => chatWith.name !== username && setShowChatInfo(true)} style={{ cursor: chatWith.name === username ? 'default' : 'pointer' }}>
                     <div className="tc-header-avatar">
                         {chatWith.name === username ? <IoBookmarkOutline size={26} color="#0088cc"/> : (chatWith.pfp ? <img src={chatWith.pfp} alt="pfp" /> : chatWith.name[0]?.toUpperCase() || "?")}
@@ -1587,6 +1589,36 @@ function App() {
         .dark-mode .tc-view-once-toggle { background: #2a2a2a; border-color: #444; }
         .tc-view-once-msg { display: flex; align-items: center; gap: 8px; background: rgba(0, 136, 204, 0.1); padding: 12px 20px; border-radius: 10px; cursor: pointer; font-weight: bold; color: #0088cc; font-style: italic; }
         .dark-mode .tc-view-once-msg { background: rgba(77, 171, 247, 0.15); color: #4dabf7; }
+
+        /* 🌟 MOBILE RESPONSIVE WP STYLE STYLES 🌟 */
+        .tc-mobile-back { display: none; }
+        
+        @media (max-width: 768px) {
+            .tc-sidebar { width: 100vw !important; flex: none !important; display: flex; }
+            .tc-main { display: none; width: 100vw !important; }
+            
+            /* Jab chat open ho */
+            .tc-app.chat-active .tc-sidebar { display: none !important; }
+            .tc-app.chat-active .tc-main { 
+                display: flex !important; 
+                flex-direction: column; 
+                position: fixed; 
+                top: 0; left: 0; 
+                height: 100vh; 
+                z-index: 1000; 
+                background: white; 
+            }
+            .dark-mode .tc-app.chat-active .tc-main { background: #121212; }
+            
+            /* Back button dikhane ke liye */
+            .tc-mobile-back { display: flex !important; margin-right: 15px; cursor: pointer; color: #555; align-items: center; justify-content: center; }
+            .dark-mode .tc-mobile-back { color: #ccc; }
+            
+            /* Auth aur Info screens ko mobile pe thik karna */
+            .tc-auth-box { width: 90vw !important; }
+            .tc-chat-info-sidebar { width: 100vw !important; }
+            .tc-modal { width: 95vw !important; }
+        }
       `}</style>
     </div>
   );
