@@ -243,33 +243,4 @@ body { height: 100vh; overflow: hidden; background-color: var(--bg-main); }
 .dark-mode .tc-chat-tile:hover, .dark-mode .tc-setting-item:hover, .dark-mode .tc-drawer-item:hover { background: #334155; }
 .dark-mode .tc-modal-header { background: #1e293b; }
 .dark-mode .tc-emoji-bar { background: #1e293b; border-color: #334155; }
-.dark-mode .tc-empty-state { background: #1e293b; color: #94a3b8; }/* 🌟 MOBILE RESPONSIVE WP STYLE STYLES 🌟 */
-.tc-mobile-back { display: none; } /* Desktop pe back button hide rahega */
-
-@media (max-width: 768px) {
-    /* 1. Mobile pe dono ko 100% width de di */
-    .tc-sidebar { width: 100vw !important; flex: none !important; display: flex; }
-    .tc-main { display: none; width: 100vw !important; }
-    
-    /* 2. Jab koi chat open ho (chat-active class lage) toh List ko chhupa do aur Chat ko full screen kar do */
-    .tc-app.chat-active .tc-sidebar { display: none !important; }
-    .tc-app.chat-active .tc-main { 
-        display: flex !important; 
-        flex-direction: column; 
-        position: fixed; 
-        top: 0; left: 0; 
-        height: 100vh; 
-        z-index: 1000; 
-        background: white; 
-    }
-    .dark-mode .tc-app.chat-active .tc-main { background: #121212; }
-    
-    /* 3. Mobile pe Back button (<-) dikhane ke liye */
-    .tc-mobile-back { display: flex !important; margin-right: 15px; cursor: pointer; color: #555; align-items: center; justify-content: center; }
-    .dark-mode .tc-mobile-back { color: #ccc; }
-    
-    /* 4. Login form aur Profile/Settings screen ko mobile pe screen ke andar fit karne ke liye */
-    .tc-auth-box { width: 90vw !important; }
-    .tc-chat-info-sidebar { width: 100vw !important; }
-    .tc-modal { width: 95vw !important; }
-}
+.dark-mode .tc-empty-state { background: #1e293b; color: #94a3b8; }

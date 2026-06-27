@@ -120,8 +120,14 @@ function App() {
   const [activeSettingMenu, setActiveSettingMenu] = useState('main'); 
   const [showEmojis, setShowEmojis] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
+  
+  // 🌟 NEW: CHANNEL STATE
+  const [showNewChannel, setShowNewChannel] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
+
   const [chatUserStatus, setChatUserStatus] = useState(null); 
   const [viewImage, setViewImage] = useState(null);
   const [showChatInfo, setShowChatInfo] = useState(false);
@@ -155,14 +161,38 @@ function App() {
   const recIntervalRef = useRef(null);
   const touchTimerRef = useRef(null); 
   const [unreadCounts, setUnreadCounts] = useState({});
-  const [groups, setGroups] = useState([]);
+  const [groups, setGroups] = useState([]); // Will hold both Groups and Channels
   const emojis = useMemo(() => ['😀','😂','😍','🙏','👍','🔥','❤️','💪','🎉', '✨', '🥺', '😎', '💯', '🤔', '🙌', '💡', '🌟'], []);
 
   const messagesEndRef = useRef(null);
   let contactTouchTimer = null;
   
-  // Clean user search input (removes all spaces and makes lowercase)
   const safeSearchQuery = searchQuery?.replace(/\s+/g, '')?.toLowerCase() || "";
+
+  // 🌟 FIX: HARDWARE BACK BUTTON LOGIC (POPSTATE) 🌟
+  useEffect(() => {
+    const handlePopState = (e) => {
+      if (showImageEditor) { setShowImageEditor(false); }
+      else if (imagePreview || audioPreview) { setImagePreview(null); setAudioPreview(null); }
+      else if (activeStoryView) { setActiveStoryView(null); }
+      else if (viewImage) { setViewImage(null); }
+      else if (showChatInfo) { setShowChatInfo(false); }
+      else if (showMenuDropdown) { setShowMenuDropdown(false); }
+      else if (showSettings) { setShowSettings(false); }
+      else if (showNewGroup) { setShowNewGroup(false); }
+      else if (showNewChannel) { setShowNewChannel(false); }
+      else if (showDrawer) { setShowDrawer(false); }
+      else if (chatWith.name !== "Select a chat") { 
+        setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); 
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [chatWith, showChatInfo, showSettings, showDrawer, showNewGroup, showNewChannel, viewImage, activeStoryView, imagePreview, audioPreview, showImageEditor, showMenuDropdown]);
+
+  const pushHistoryState = () => {
+    window.history.pushState({ opened: true }, "");
+  };
 
   const scrollToBottom = useCallback(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), []);
   useEffect(() => { scrollToBottom(); }, [currentMessages, scrollToBottom]);
@@ -170,8 +200,8 @@ function App() {
   const toggleTheme = () => { setIsDarkMode(!isDarkMode); localStorage.setItem('tcTheme', !isDarkMode ? 'dark' : 'light'); };
   const changeWallpaper = (bg) => { setChatWallpaper(bg); localStorage.setItem('tcWallpaper', bg); };
 
-  const getChatId = useCallback((user1, user2, isGroup) => {
-    if (isGroup) return user2;
+  const getChatId = useCallback((user1, user2, isGroupOrChannel) => {
+    if (isGroupOrChannel) return user2;
     return [user1, user2].sort().join('_');
   }, []);
 
@@ -318,7 +348,6 @@ function App() {
     return () => unsubStories();
   }, [user, username]);
 
-  // 🌟 ULTRA SMART SEARCH ENGINE 🌟
   useEffect(() => {
     const fetchSearch = async () => {
       if (safeSearchQuery.length < 1) { setGlobalSearchResults([]); return; }
@@ -354,7 +383,7 @@ function App() {
 
   useEffect(() => {
     if (!user || !username || chatWith.name === "Select a chat") { setCurrentMessages([]); return; }
-    const chatId = getChatId(username, chatWith.name, chatWith.type === 'group');
+    const chatId = getChatId(username, chatWith.name, chatWith.type === 'group' || chatWith.type === 'channel');
     
     const q = query(collection(db, 'messages'), where("chatId", "==", chatId));
 
@@ -400,7 +429,7 @@ function App() {
             const snap = await getDocs(q);
             snap.forEach(document => { deleteDoc(doc(db, 'messages', document.id)).catch(()=>{}); });
         } catch(e) {}
-        if(chatWith.name === contactName) { setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); }
+        if(chatWith.name === contactName) { setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); window.history.back(); }
     }
   };
 
@@ -415,13 +444,13 @@ function App() {
   };
 
   const deleteMessage = async (msgId) => { if(window.confirm("Delete this message for everyone?")) { try { await deleteDoc(doc(db, 'messages', msgId)); } catch(e) {} } };
-  const clearChat = () => { if(window.confirm(`Are you sure you want to delete all messages here?`)) { currentMessages.forEach(m => { deleteDoc(doc(db, 'messages', m.id)).catch(()=>{}); }); setShowChatInfo(false); } };
+  const clearChat = () => { if(window.confirm(`Are you sure you want to delete all messages here?`)) { currentMessages.forEach(m => { deleteDoc(doc(db, 'messages', m.id)).catch(()=>{}); }); setShowChatInfo(false); window.history.back(); } };
 
   const toggleBlock = (contactName) => {
     if(contactName === username) return;
     let newList;
     if(blockedContacts.includes(contactName)) { newList = blockedContacts.filter(c => c !== contactName); showToast(`${contactName} Unblocked.`); } 
-    else { if(window.confirm(`Block ${contactName}? They won't be able to message you.`)) { newList = [...blockedContacts, contactName]; setShowChatInfo(false); } else return; }
+    else { if(window.confirm(`Block ${contactName}? They won't be able to message you.`)) { newList = [...blockedContacts, contactName]; setShowChatInfo(false); window.history.back(); } else return; }
     setBlockedContacts(newList); localStorage.setItem('tcBlockedContacts', JSON.stringify(newList));
     try { updateDoc(doc(db, 'users', username), { blockedContacts: newList }); } catch(e) {}
   };
@@ -458,6 +487,7 @@ function App() {
     if (file) { 
         const base64Raw = await compressImage(file);
         setEditImageURL(base64Raw);
+        pushHistoryState();
         setShowImageEditor(true); 
     }
     e.target.value = null; 
@@ -509,6 +539,8 @@ function App() {
       const finalImageBase64 = canvasRef.current.toDataURL('image/jpeg', 0.8);
       setImagePreview(finalImageBase64); 
       setShowImageEditor(false);
+      window.history.back(); // Pop state
+      pushHistoryState(); // Re-push for Image Preview
       setPreviewCaption('');
   };
 
@@ -544,9 +576,10 @@ function App() {
     if (imageToSend.length > 1040000) return alert("Edited Image is too large for database! Try clearing some drawings.");
 
     setImagePreview(null); setPreviewCaption('');
+    window.history.back();
 
     try {
-      const msgData = { text: captionToSave, sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group'), status: "sent", time: timeString, replyTo: replyTo ? replyTo.text || 'Image' : null, replySender: replyTo ? replyTo.sender : null };
+      const msgData = { text: captionToSave, sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group' || chatWith.type === 'channel'), status: "sent", time: timeString, replyTo: replyTo ? replyTo.text || 'Image' : null, replySender: replyTo ? replyTo.sender : null };
       await addDoc(collection(db, 'messages'), { ...msgData, image: imageToSend, isViewOnce: isViewOnce, participants: [username, chatWith.name], createdAt: serverTimestamp() }); 
       await ensureMutualContact(); 
       setIsViewOnce(false);
@@ -555,6 +588,7 @@ function App() {
   };
 
   const handleViewOnceClick = async (msgId, base64Image, sender) => {
+      pushHistoryState();
       setViewImage(base64Image);
       if (sender !== username || chatWith.name === username) {
           try { await deleteDoc(doc(db, 'messages', msgId)); } catch(e) {}
@@ -580,6 +614,7 @@ function App() {
         clearInterval(recIntervalRef.current);
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
         audioChunksRef.current = [];
+        pushHistoryState();
         setAudioPreview({ blob: audioBlob, url: URL.createObjectURL(audioBlob) });
         stream.getTracks().forEach(track => track.stop()); 
       };
@@ -610,12 +645,13 @@ function App() {
     const { blob } = audioPreview;
     const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     setAudioPreview(null);
+    window.history.back();
 
     try {
       const base64Audio = await blobToBase64(blob);
       if (base64Audio.length > 1040000) return alert("Recording is too long!");
 
-      const msgData = { text: "🎙️ Voice Note", sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group'), status: "sent", time: timeString };
+      const msgData = { text: "🎙️ Voice Note", sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group' || chatWith.type === 'channel'), status: "sent", time: timeString };
       await addDoc(collection(db, 'messages'), { ...msgData, audio: base64Audio, participants: [username, chatWith.name], createdAt: serverTimestamp() });
       await ensureMutualContact(); 
     } catch(err) { alert("Audio upload failed! " + err.message); }
@@ -635,7 +671,7 @@ function App() {
     if (input.trim() === "" || isBlocked) return;
     const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    const msgData = { text: input, sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group'), status: "sent", time: timeString, reaction: null, replyTo: replyTo ? replyTo.text || 'Image' : null, replySender: replyTo ? replyTo.sender : null };
+    const msgData = { text: input, sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group' || chatWith.type === 'channel'), status: "sent", time: timeString, reaction: null, replyTo: replyTo ? replyTo.text || 'Image' : null, replySender: replyTo ? replyTo.sender : null };
     setInput(''); setShowEmojis(false); setReplyTo(null);
 
     try { 
@@ -647,12 +683,24 @@ function App() {
   
   const createNewGroup = () => { 
     if(newGroupName.trim() !== '') { 
-      const newGroups = [{ name: newGroupName, desc: "New Group", icon: null, admin: username, members: [username] }, ...groups];
+      const newGroups = [{ name: newGroupName, desc: "New Group", icon: null, admin: username, members: [username], type: 'group' }, ...groups];
       setGroups(newGroups); updateDoc(doc(db, 'users', username), { groups: newGroups }).catch(()=>{});
       setNewGroupName(''); setShowNewGroup(false); setChatWith({ name: newGroupName, type: 'group', pfp: null, desc: "New Group" }); 
+      window.history.back();
     } 
   };
-  const currentGroup = useMemo(() => chatWith.type === 'group' ? groups.find(g => g.name === chatWith.name) : null, [chatWith, groups]);
+  
+  // 🌟 NEW: CREATE CHANNEL FUNCTION
+  const createNewChannel = () => { 
+    if(newChannelName.trim() !== '') { 
+      const newGroups = [{ name: newChannelName, desc: "New Channel", icon: null, admin: username, members: [username], type: 'channel' }, ...groups];
+      setGroups(newGroups); updateDoc(doc(db, 'users', username), { groups: newGroups }).catch(()=>{});
+      setNewChannelName(''); setShowNewChannel(false); setChatWith({ name: newChannelName, type: 'channel', pfp: null, desc: "New Channel" }); 
+      window.history.back();
+    } 
+  };
+
+  const currentGroup = useMemo(() => (chatWith.type === 'group' || chatWith.type === 'channel') ? groups.find(g => g.name === chatWith.name) : null, [chatWith, groups]);
 
   const handleGroupAvatarUpload = async (e) => {
     const file = e.target.files[0];
@@ -726,17 +774,49 @@ function App() {
 
   const mediaMessages = useMemo(() => currentMessages.filter(m => m.image), [currentMessages]);
   
+  // 🌟 SMART ONLINE/OFFLINE STATUS LOGIC 🌟
   let displayStatus = "Offline"; 
   if (isBlocked) { displayStatus = "Blocked"; } 
   else if (chatWith.name === "Select a chat") { displayStatus = ""; } 
   else if (chatWith.name === username) { displayStatus = "Saved Messages"; }
   else if (chatWith.type === 'group') { displayStatus = `${currentGroup?.members?.length || 0} members`; } 
+  else if (chatWith.type === 'channel') { displayStatus = `${currentGroup?.members?.length || 0} subscribers`; } 
   else if (chatUserStatus) {
-     if (chatUserStatus.typingTo === username) { displayStatus = "Typing..."; } 
-     else if (chatUserStatus.isOnline) { displayStatus = "Online"; } 
-     else if (chatUserStatus.privacy?.lastSeen === false) { displayStatus = "Online"; } 
-     else if (chatUserStatus.lastSeen) { try { const date = chatUserStatus.lastSeen.toDate(); displayStatus = `last seen at ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`; } catch(e) { displayStatus = "Offline"; } } 
-     else { displayStatus = "Online"; }
+     if (chatUserStatus.typingTo === username) { 
+         displayStatus = "Typing..."; 
+     } 
+     else if (chatUserStatus.isOnline) { 
+         displayStatus = "Online"; 
+     } 
+     else if (chatUserStatus.privacy?.lastSeen === false) { 
+         displayStatus = ""; 
+     } 
+     else if (chatUserStatus.lastSeen) { 
+         try { 
+             const date = chatUserStatus.lastSeen.toDate(); 
+             const now = new Date();
+             const isToday = now.toDateString() === date.toDateString();
+             
+             const yesterday = new Date(now);
+             yesterday.setDate(now.getDate() - 1);
+             const isYesterday = yesterday.toDateString() === date.toDateString();
+             
+             const timeStr = date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+             
+             if (isToday) {
+                 displayStatus = `last seen today at ${timeStr}`;
+             } else if (isYesterday) {
+                 displayStatus = `last seen yesterday at ${timeStr}`;
+             } else {
+                 displayStatus = `last seen on ${date.toLocaleDateString()} at ${timeStr}`;
+             }
+         } catch(e) { 
+             displayStatus = "Offline"; 
+         } 
+     } 
+     else { 
+         displayStatus = "Offline"; 
+     }
   }
 
   const uniqueStories = useMemo(() => Array.from(new Map(stories.map(s => [s.sender, s])).values()), [stories]);
@@ -762,17 +842,17 @@ function App() {
                  ) : (
                      <>
                         {groups.filter(g => archivedChats.includes(g.name)).map((g, i) => (
-                          <div key={'arch_group_'+i} className={`tc-chat-tile ${chatWith.name === g.name ? 'active' : ''}`} onClick={() => { setChatWith({ name: g.name, type: 'group', pfp: g.icon, desc: `${g.members?.length || 0} members` }); setInfoTab('members'); }}>
+                          <div key={'arch_group_'+i} className={`tc-chat-tile ${chatWith.name === g.name ? 'active' : ''}`} onClick={() => { pushHistoryState(); setChatWith({ name: g.name, type: g.type || 'group', pfp: g.icon, desc: `${g.members?.length || 0} ${g.type==='channel'?'subscribers':'members'}` }); setInfoTab('members'); }}>
                               <div className="tc-tile-avatar group">{g.icon ? <img src={g.icon} alt="G" /> : g.name[0]?.toUpperCase() || "?"}</div>
                               <div className="tc-tile-info">
                                   <div className="tc-tile-top"><span className="tc-tile-name">{g.name}</span></div>
-                                  <div className="tc-tile-bottom">{g.members?.length || 0} members</div>
+                                  <div className="tc-tile-bottom">{g.members?.length || 0} {g.type==='channel'?'subscribers':'members'}</div>
                               </div>
                           </div>
                         ))}
                         {contacts.filter(c => archivedChats.includes(c.name)).map((c, i) => (
                           <div key={'arch_contact_'+i} className={`tc-chat-tile ${chatWith.name === c.name ? 'active' : ''}`} 
-                               onClick={() => { setChatWith({ name: c.name, type: 'contact', pfp: c.pfp, desc: c.about || "Tap to chat" }); setInfoTab('media'); }}
+                               onClick={() => { pushHistoryState(); setChatWith({ name: c.name, type: 'contact', pfp: c.pfp, desc: c.about || "Tap to chat" }); setInfoTab('media'); }}
                                onContextMenu={(e) => { e.preventDefault(); toggleArchive(c.name); }}>
                               <div className="tc-tile-avatar contact">{c.pfp ? <img src={c.pfp} alt="C" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit:'cover'}}/> : c.name[0]?.toUpperCase() || "?"}</div>
                               <div className="tc-tile-info">
@@ -800,7 +880,7 @@ function App() {
                )}
 
                {!searchQuery && (
-                   <div className={`tc-chat-tile ${chatWith.name === username ? 'active' : ''}`} onClick={() => { setChatWith({ name: username, type: 'contact', pfp: pfp, desc: "Your personal cloud storage" }); }}>
+                   <div className={`tc-chat-tile ${chatWith.name === username ? 'active' : ''}`} onClick={() => { pushHistoryState(); setChatWith({ name: username, type: 'contact', pfp: pfp, desc: "Your personal cloud storage" }); }}>
                        <div className="tc-tile-avatar contact" style={{background: 'linear-gradient(135deg, #0088cc, #005580)', color: 'white', boxShadow: '0 4px 10px rgba(0,136,204,0.3)'}}><IoBookmarkOutline size={24}/></div>
                        <div className="tc-tile-info">
                            <div className="tc-tile-top"><span className="tc-tile-name" style={{fontWeight: 'bold', color: '#0088cc'}}>Saved Messages</span></div>
@@ -813,7 +893,7 @@ function App() {
                   <div className="tc-global-results-container" style={{marginBottom: '15px'}}>
                       <div style={{padding: '10px 15px', fontSize: '12px', fontWeight: 'bold', color: '#888', textTransform: 'uppercase', letterSpacing: '1px'}}>🌍 Global Search</div>
                       {globalSearchResults.map((u, i) => (
-                          <div key={'glob_'+i} className="tc-chat-tile" onClick={() => { setChatWith({ name: u.username, type: 'contact', pfp: u.pfp, desc: u.about || "Available" }); setSearchQuery(''); }}>
+                          <div key={'glob_'+i} className="tc-chat-tile" onClick={() => { pushHistoryState(); setChatWith({ name: u.username, type: 'contact', pfp: u.pfp, desc: u.about || "Available" }); setSearchQuery(''); }}>
                               <div className="tc-tile-avatar contact">{u.pfp ? <img src={u.pfp} alt="U" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit:'cover'}}/> : u.username[0]?.toUpperCase() || "?"}</div>
                               <div className="tc-tile-info">
                                   <div className="tc-tile-top"><span className="tc-tile-name" style={{color: '#0088cc'}}>{u.username}</span></div>
@@ -830,11 +910,11 @@ function App() {
                    const cleanGroup = (g.name || "").replace(/\s+/g, '').toLowerCase();
                    return cleanGroup.includes(safeSearchQuery);
                }).map((g, i) => (
-                  <div key={'group_'+i} className={`tc-chat-tile ${chatWith.name === g.name ? 'active' : ''}`} onClick={() => { setChatWith({ name: g.name, type: 'group', pfp: g.icon, desc: `${g.members?.length || 0} members` }); setInfoTab('members'); }}>
+                  <div key={'group_'+i} className={`tc-chat-tile ${chatWith.name === g.name ? 'active' : ''}`} onClick={() => { pushHistoryState(); setChatWith({ name: g.name, type: g.type || 'group', pfp: g.icon, desc: `${g.members?.length || 0} ${g.type==='channel'?'subscribers':'members'}` }); setInfoTab('members'); }}>
                       <div className="tc-tile-avatar group">{g.icon ? <img src={g.icon} alt="G" /> : g.name[0]?.toUpperCase() || "?"}</div>
                       <div className="tc-tile-info">
                           <div className="tc-tile-top"><span className="tc-tile-name">{g.name}</span></div>
-                          <div className="tc-tile-bottom">{g.members?.length || 0} members</div>
+                          <div className="tc-tile-bottom">{g.members?.length || 0} {g.type==='channel'?'subscribers':'members'}</div>
                       </div>
                   </div>
                ))}
@@ -845,7 +925,7 @@ function App() {
                    return cleanContact.includes(safeSearchQuery);
                }).map((c, i) => (
                   <div key={'contact_'+i} className={`tc-chat-tile ${chatWith.name === c.name ? 'active' : ''}`} 
-                       onClick={() => { setChatWith({ name: c.name, type: 'contact', pfp: c.pfp, desc: c.about || "Tap to chat" }); setInfoTab('media'); }}
+                       onClick={() => { pushHistoryState(); setChatWith({ name: c.name, type: 'contact', pfp: c.pfp, desc: c.about || "Tap to chat" }); setInfoTab('media'); }}
                        onContextMenu={(e) => { e.preventDefault(); handleRemoveContact(c.name); }}
                        onTouchStart={() => onContactTouchStart(c.name)} onTouchEnd={onContactTouchEnd} onTouchMove={onContactTouchEnd}>
                       <div className="tc-tile-avatar contact">{c.pfp ? <img src={c.pfp} alt="C" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit:'cover'}}/> : c.name[0]?.toUpperCase() || "?"}</div>
@@ -900,7 +980,7 @@ function App() {
                        </div>
                    )}
 
-                   {chatWith.type === 'group' && msg.sender !== username && <div className="tc-msg-sender">{msg.sender}</div>}
+                   {(chatWith.type === 'group' || chatWith.type === 'channel') && msg.sender !== username && <div className="tc-msg-sender">{msg.sender}</div>}
                    {msg.replyTo && (<div className="tc-msg-reply-block"><div className="reply-sender">{msg.replySender}</div><div className="reply-text">{msg.replyTo.length > 30 ? msg.replyTo.substring(0,30)+'...' : msg.replyTo}</div></div>)}
                    
                    <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
@@ -911,7 +991,7 @@ function App() {
                                   <span>Photo (View Once)</span>
                               </div>
                            ) : (
-                              <img src={msg.image} className="tc-msg-media" onClick={() => setViewImage(msg.image)} alt="media" style={{borderRadius: '8px', maxWidth: '100%', cursor: 'pointer'}} />
+                              <img src={msg.image} className="tc-msg-media" onClick={() => { pushHistoryState(); setViewImage(msg.image); }} alt="media" style={{borderRadius: '8px', maxWidth: '100%', cursor: 'pointer'}} />
                            )
                        )}
                        {msg.audio && <audio src={msg.audio} controls className="tc-msg-audio" style={{ outline: 'none' }} />}
@@ -952,7 +1032,6 @@ function App() {
   }
 
   return (
-    // 🌟 ADDED chat-active CLASS FOR MOBILE TRANSITION 🌟
     <div className={`tc-app ${isDarkMode ? 'dark-mode' : ''} ${chatWith.name !== "Select a chat" ? 'chat-active' : ''}`}>
       
       {toastMsg && (
@@ -962,12 +1041,12 @@ function App() {
       )}
 
       {viewImage && (
-          <div className="tc-image-viewer" onClick={() => setViewImage(null)}>
+          <div className="tc-image-viewer" onClick={() => { setViewImage(null); window.history.back(); }}>
               <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '15px' }}>
                   <button onClick={(e) => { e.stopPropagation(); downloadImage(viewImage, 'Telechat_Image.jpg'); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', padding: '10px', color: 'white', cursor: 'pointer', backdropFilter: 'blur(5px)' }}>
                       <IoDownloadOutline size={28} />
                   </button>
-                  <button onClick={() => setViewImage(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', padding: '10px', color: 'white', cursor: 'pointer', backdropFilter: 'blur(5px)' }}>
+                  <button onClick={() => { setViewImage(null); window.history.back(); }} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', padding: '10px', color: 'white', cursor: 'pointer', backdropFilter: 'blur(5px)' }}>
                       <IoCloseOutline size={28} />
                   </button>
               </div>
@@ -976,12 +1055,12 @@ function App() {
       )}
       
       {activeStoryView && (
-          <div className="tc-story-viewer" onClick={() => setActiveStoryView(null)}>
+          <div className="tc-story-viewer" onClick={() => { setActiveStoryView(null); window.history.back(); }}>
               <div className="tc-story-progress-bar"><div className="tc-progress-fill"></div></div>
               <div className="tc-story-header">
                   <img src={activeStoryView.pfp || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} alt="dp" />
                   <span>{activeStoryView.sender}</span>
-                  <IoCloseOutline size={30} onClick={() => setActiveStoryView(null)} style={{marginLeft:'auto', cursor:'pointer'}}/>
+                  <IoCloseOutline size={30} onClick={() => { setActiveStoryView(null); window.history.back(); }} style={{marginLeft:'auto', cursor:'pointer'}}/>
               </div>
               <img src={activeStoryView.image} className="tc-story-main-img" alt="story" onClick={(e)=>e.stopPropagation()} />
           </div>
@@ -992,7 +1071,7 @@ function App() {
           <div className="tc-editor-box">
              <div className="tc-editor-header">
                 <h3>Edit Photo</h3>
-                <IoCloseOutline size={28} style={{cursor:'pointer'}} onClick={() => {setShowImageEditor(false); setEditImageURL(null);}} />
+                <IoCloseOutline size={28} style={{cursor:'pointer'}} onClick={() => {setShowImageEditor(false); setEditImageURL(null); window.history.back();}} />
              </div>
              <div className="tc-canvas-container">
                  <canvas ref={canvasRef} className="tc-drawing-canvas" onMouseDown={startCanvasAction} onMouseMove={drawOnCanvas} onMouseUp={stopCanvasAction} onMouseLeave={stopCanvasAction} onTouchStart={startCanvasAction} onTouchMove={drawOnCanvas} onTouchEnd={stopCanvasAction} />
@@ -1038,7 +1117,7 @@ function App() {
                </div>
             )}
             <div className="tc-preview-actions" style={{marginTop: '15px'}}>
-              <button className="tc-btn-secondary" onClick={() => { setImagePreview(null); setAudioPreview(null); setPreviewCaption(''); setIsViewOnce(false); }}>Cancel</button>
+              <button className="tc-btn-secondary" onClick={() => { setImagePreview(null); setAudioPreview(null); setPreviewCaption(''); setIsViewOnce(false); window.history.back(); }}>Cancel</button>
               <button className="tc-btn-primary" onClick={imagePreview ? confirmSendImage : confirmSendAudio}>Send <IoPaperPlane style={{marginLeft: '5px'}}/></button>
             </div>
           </div>
@@ -1046,13 +1125,13 @@ function App() {
       )}
 
       {showSettings && (
-        <div className="tc-modal-overlay" onClick={() => {setShowSettings(false); setActiveSettingMenu('main');}}>
+        <div className="tc-modal-overlay" onClick={() => {setShowSettings(false); setActiveSettingMenu('main'); window.history.back();}}>
           <div className="tc-modal" onClick={(e) => e.stopPropagation()}>
             <div className="tc-modal-header">
                 <h3>
                   {activeSettingMenu === 'main' ? 'Settings' : activeSettingMenu === 'blocked' ? 'Blocked Contacts' : activeSettingMenu === 'privacy' ? 'Privacy Settings' : activeSettingMenu === 'account' ? 'Account & Security' : activeSettingMenu === 'share' ? 'Share Profile' : activeSettingMenu === 'wallpaper' ? 'Chat Wallpaper' : 'Edit Profile'}
                 </h3>
-                <IoCloseOutline size={28} className="tc-icon-btn" onClick={() => setShowSettings(false)} />
+                <IoCloseOutline size={28} className="tc-icon-btn" onClick={() => {setShowSettings(false); window.history.back();}} />
             </div>
             
             {activeSettingMenu === 'main' ? (
@@ -1152,7 +1231,7 @@ function App() {
         </div>
       )}
 
-      <div className={`tc-drawer-overlay ${showDrawer ? 'show' : ''}`} onClick={() => setShowDrawer(false)}>
+      <div className={`tc-drawer-overlay ${showDrawer ? 'show' : ''}`} onClick={() => {setShowDrawer(false); window.history.back();}}>
         <div className={`tc-drawer ${showDrawer ? 'open' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="tc-drawer-header">
                 <div className="tc-drawer-pfp">{pfp ? <img src={pfp} alt="pfp" /> : username[0]?.toUpperCase() || "?"}</div>
@@ -1163,32 +1242,57 @@ function App() {
                 </div>
             </div>
             <div className="tc-drawer-body">
-                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); setChatWith({ name: username, type: 'contact', pfp: pfp, desc: "Your personal cloud storage" }); }}>
+                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); window.history.back(); pushHistoryState(); setChatWith({ name: username, type: 'contact', pfp: pfp, desc: "Your personal cloud storage" }); }}>
                     <IoBookmarkOutline size={22} color="#0088cc" /> <span style={{fontWeight: 'bold', color: '#0088cc'}}>Saved Messages</span>
                 </div>
                 <hr style={{margin: '10px 0', border: 'none', borderTop: '1px solid #eee'}} />
 
-                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); setShowSettings(true); setActiveSettingMenu('share'); }}><IoQrCodeOutline size={22}/> <span>Share Profile</span></div>
-                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); setShowNewGroup(true); }}><IoPeopleOutline size={22}/> <span>New Group</span></div>
-                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); setShowSettings(true); setActiveSettingMenu('main'); }}><IoSettingsOutline size={22}/> <span>Settings</span></div>
+                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); pushHistoryState(); setShowSettings(true); setActiveSettingMenu('share'); }}><IoQrCodeOutline size={22}/> <span>Share Profile</span></div>
+                
+                {/* 🌟 CHANNELS AUR GROUPS KE BUTTON 🌟 */}
+                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); pushHistoryState(); setShowNewGroup(true); }}><IoPeopleOutline size={22}/> <span>New Group</span></div>
+                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); pushHistoryState(); setShowNewChannel(true); }}><IoMegaphoneOutline size={22}/> <span>New Channel</span></div>
+                
+                <div className="tc-drawer-item" onClick={() => { setShowDrawer(false); pushHistoryState(); setShowSettings(true); setActiveSettingMenu('main'); }}><IoSettingsOutline size={22}/> <span>Settings</span></div>
             </div>
         </div>
       </div>
 
       {showNewGroup && (
-        <div className="tc-modal-overlay" onClick={() => setShowNewGroup(false)}>
+        <div className="tc-modal-overlay" onClick={() => {setShowNewGroup(false); window.history.back();}}>
           <div className="tc-modal" onClick={(e) => e.stopPropagation()}>
             <div className="tc-modal-header">
                 <h3>Create Group</h3>
-                <IoCloseOutline size={28} className="tc-icon-btn" onClick={() => setShowNewGroup(false)} />
+                <IoCloseOutline size={28} className="tc-icon-btn" onClick={() => {setShowNewGroup(false); window.history.back();}} />
             </div>
             <div className="tc-settings-content tc-edit-profile">
                <div className="tc-form-group">
                   <input type="text" value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} className="tc-input-modern" placeholder="Group Name" autoFocus />
                </div>
                <div className="tc-btn-row">
-                   <button className="tc-btn-secondary" onClick={() => setShowNewGroup(false)}>Cancel</button>
+                   <button className="tc-btn-secondary" onClick={() => {setShowNewGroup(false); window.history.back();}}>Cancel</button>
                    <button className="tc-btn-primary" onClick={createNewGroup}>Create</button>
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 NEW CHANNEL CREATION MODAL 🌟 */}
+      {showNewChannel && (
+        <div className="tc-modal-overlay" onClick={() => {setShowNewChannel(false); window.history.back();}}>
+          <div className="tc-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tc-modal-header">
+                <h3>Create Channel</h3>
+                <IoCloseOutline size={28} className="tc-icon-btn" onClick={() => {setShowNewChannel(false); window.history.back();}} />
+            </div>
+            <div className="tc-settings-content tc-edit-profile">
+               <div className="tc-form-group">
+                  <input type="text" value={newChannelName} onChange={(e) => setNewChannelName(e.target.value)} className="tc-input-modern" placeholder="Channel Name" autoFocus />
+               </div>
+               <div className="tc-btn-row">
+                   <button className="tc-btn-secondary" onClick={() => {setShowNewChannel(false); window.history.back();}}>Cancel</button>
+                   <button className="tc-btn-primary" onClick={createNewChannel}>Create</button>
                </div>
             </div>
           </div>
@@ -1231,7 +1335,7 @@ function App() {
                 <input type="file" id="storyUploadInput" style={{display:'none'}} onChange={handleStoryUpload} accept="image/*" />
              </div>
              {uniqueStories.map((s, i) => (
-                <div key={s.id} className="tc-story-item" onClick={() => setActiveStoryView(s)}>
+                <div key={s.id} className="tc-story-item" onClick={() => {pushHistoryState(); setActiveStoryView(s);}}>
                    <div className="tc-story-avatar-wrap active-border"><img src={s.pfp || "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png"} alt="dp" /></div>
                    <span>{s.sender}</span>
                 </div>
@@ -1239,10 +1343,10 @@ function App() {
           </div>
 
           <div className="tc-sidebar-search">
-             <IoMenu size={32} className="tc-hamburger" onClick={() => setShowDrawer(true)} />
+             <IoMenu size={32} className="tc-hamburger" onClick={() => {pushHistoryState(); setShowDrawer(true);}} />
              <div className="tc-search-wrapper">
-                <IoSearchOutline className="tc-search-icon" size={20} />
-                <input type="text" placeholder="Search by name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                 <IoSearchOutline className="tc-search-icon" size={20} />
+                 <input type="text" placeholder="Search by name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
              </div>
           </div>
           
@@ -1259,11 +1363,11 @@ function App() {
         <div className="tc-main" style={{ position: 'relative' }}>
             <div className="tc-chat-header">
                 {/* 🌟 MOBILE BACK BUTTON 🌟 */}
-                <div className="tc-mobile-back" onClick={() => { setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); }}>
+                <div className="tc-mobile-back" onClick={() => { window.history.back(); setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); }}>
                     <IoArrowUndoOutline size={26} />
                 </div>
 
-                <div className="tc-header-profile" onClick={() => chatWith.name !== username && setShowChatInfo(true)} style={{ cursor: chatWith.name === username ? 'default' : 'pointer' }}>
+                <div className="tc-header-profile" onClick={() => chatWith.name !== username && (pushHistoryState(), setShowChatInfo(true))} style={{ cursor: chatWith.name === username ? 'default' : 'pointer' }}>
                     <div className="tc-header-avatar">
                         {chatWith.name === username ? <IoBookmarkOutline size={26} color="#0088cc"/> : (chatWith.pfp ? <img src={chatWith.pfp} alt="pfp" /> : chatWith.name[0]?.toUpperCase() || "?")}
                     </div>
@@ -1285,7 +1389,7 @@ function App() {
                                    {archivedChats.includes(chatWith.name) ? 'Unarchive Chat' : 'Archive Chat'}
                                </div>
                            )}
-                           {chatWith.name !== username && <div onClick={() => { setShowChatInfo(true); setShowMenuDropdown(false); }}>Contact Info</div>}
+                           {chatWith.name !== username && <div onClick={() => { pushHistoryState(); setShowChatInfo(true); setShowMenuDropdown(false); }}>Contact Info</div>}
                            <div onClick={() => { clearChat(); setShowMenuDropdown(false); }}>Clear Chat</div>
                            {chatWith.type === 'contact' && chatWith.name !== username && (<div className="tc-danger-text" onClick={() => { handleRemoveContact(chatWith.name); setShowMenuDropdown(false); }}>Remove Contact</div>)}
                         </div>
@@ -1305,10 +1409,13 @@ function App() {
             </div>
 
             <div className="tc-input-section" onClick={()=>setShowMenuDropdown(false)}>
+                {/* 🌟 CHANNEL MESSAGE RESTRICTION LOGIC 🌟 */}
                 {isBlocked ? (
                    <div className="tc-blocked-banner">You blocked this contact. Unblock to send a message.</div>
                 ) : chatWith.name === "Select a chat" ? (
                    <div className="tc-blocked-banner" style={{background: 'transparent'}}></div>
+                ) : chatWith.type === 'channel' && currentGroup?.admin !== username ? (
+                   <div className="tc-blocked-banner">📢 Only Admins can send messages here.</div>
                 ) : (
                   <>
                     {replyTo && (
@@ -1349,25 +1456,27 @@ function App() {
             {showChatInfo && chatWith.name !== "Select a chat" && chatWith.name !== username && (
               <div className="tc-chat-info-sidebar">
                  <div className="tc-chat-info-header">
-                    <IoCloseOutline size={28} onClick={() => setShowChatInfo(false)} style={{cursor: 'pointer'}} />
-                    <h3>{chatWith.type === 'group' ? 'Group Info' : 'Contact Info'}</h3>
+                    <IoCloseOutline size={28} onClick={() => {setShowChatInfo(false); window.history.back();}} style={{cursor: 'pointer'}} />
+                    <h3>{(chatWith.type === 'group' || chatWith.type === 'channel') ? 'Info' : 'Contact Info'}</h3>
                  </div>
                  <div className="tc-chat-info-body">
                     <div className="tc-chat-info-avatar" style={{position: 'relative'}}>
                        {chatWith.pfp ? <img src={chatWith.pfp} alt="profile" /> : chatWith.name[0]?.toUpperCase() || "?"}
-                       {chatWith.type === 'group' && currentGroup?.admin === username && (
+                       {(chatWith.type === 'group' || chatWith.type === 'channel') && currentGroup?.admin === username && (
                          <><label htmlFor="group-dp-upload" className="tc-group-dp-overlay"><IoCameraOutline size={28} color="white"/></label><input type="file" id="group-dp-upload" onChange={handleGroupAvatarUpload} style={{display: 'none'}} /></>
                        )}
                     </div>
                     <h2 style={{margin: '0 0 5px 0', fontSize: '22px'}}>{chatWith.name}</h2>
-                    <p style={{margin: '0', color: '#888', fontStyle: 'italic'}}>"{chatWith.type === 'group' ? `${currentGroup?.members?.length || 0} members` : chatWith.desc}"</p>
+                    <p style={{margin: '0', color: '#888', fontStyle: 'italic'}}>
+                      "{(chatWith.type === 'group' || chatWith.type === 'channel') ? `${currentGroup?.members?.length || 0} ${chatWith.type==='channel'?'Subscribers':'Members'}` : chatWith.desc}"
+                    </p>
                     
                     <div className="tc-chat-info-tabs" style={{ marginTop: '20px' }}>
                        <div className={infoTab === 'media' ? 'active' : ''} onClick={() => setInfoTab('media')}><IoImageOutline size={20}/> Media</div>
-                       {chatWith.type === 'group' && (<div className={infoTab === 'members' ? 'active' : ''} onClick={() => setInfoTab('members')}><IoPeopleOutline size={20}/> Members</div>)}
+                       {(chatWith.type === 'group' || chatWith.type === 'channel') && (<div className={infoTab === 'members' ? 'active' : ''} onClick={() => setInfoTab('members')}><IoPeopleOutline size={20}/> {chatWith.type==='channel'?'Subscribers':'Members'}</div>)}
                     </div>
                     <div className="tc-chat-info-content">
-                       {infoTab === 'media' && (mediaMessages.length > 0 ? (<div className="tc-media-grid">{mediaMessages.map(m => (<img key={m.id} src={m.image} onClick={() => setViewImage(m.image)} alt="media" />))}</div>) : (<div className="tc-empty-info">No media shared yet.</div>))}
+                       {infoTab === 'media' && (mediaMessages.length > 0 ? (<div className="tc-media-grid">{mediaMessages.map(m => (<img key={m.id} src={m.image} onClick={() => {pushHistoryState(); setViewImage(m.image);}} alt="media" />))}</div>) : (<div className="tc-empty-info">No media shared yet.</div>))}
                        {chatWith.type === 'contact' && (
                          <div className="tc-chat-info-actions" style={{marginTop: '30px', display:'flex', flexDirection:'column', gap:'10px'}}>
                            <button className="tc-action-btn-danger" onClick={clearChat}><IoTrashOutline size={20} style={{marginRight: '8px'}}/> Delete Chat</button>
@@ -1589,6 +1698,13 @@ function App() {
         .dark-mode .tc-view-once-toggle { background: #2a2a2a; border-color: #444; }
         .tc-view-once-msg { display: flex; align-items: center; gap: 8px; background: rgba(0, 136, 204, 0.1); padding: 12px 20px; border-radius: 10px; cursor: pointer; font-weight: bold; color: #0088cc; font-style: italic; }
         .dark-mode .tc-view-once-msg { background: rgba(77, 171, 247, 0.15); color: #4dabf7; }
+
+        /* 🌟 HEADER FIXES FOR MOBILE 🌟 */
+        .tc-chat-header { display: flex; align-items: center; padding: 10px 15px; height: 65px; border-bottom: 1px solid #eee; background: white; z-index: 10; width: 100%; box-sizing: border-box; }
+        .dark-mode .tc-chat-header { background: #1e1e1e; border-bottom: 1px solid #2a2a2a; }
+        .tc-header-profile { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+        .tc-header-text { display: flex; flex-direction: column; min-width: 0; }
+        .tc-header-text h3 { margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
         /* 🌟 MOBILE RESPONSIVE WP STYLE STYLES 🌟 */
         .tc-mobile-back { display: none; }

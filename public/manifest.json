@@ -1,0 +1,20 @@
+{
+  "short_name": "Telechat",
+  "name": "Telechat Messenger",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0088cc",
+  "background_color": "#ffffff"
+}
