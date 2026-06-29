@@ -3,16 +3,17 @@ import './App.css';
 import { db, auth } from './firebase'; 
 import { collection, query, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc, updateDoc, setDoc, getDoc, where, getDocs, limit } from 'firebase/firestore'; 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updateProfile, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+
 import { 
   IoMenu, IoSearchOutline, IoSettingsOutline, IoPersonOutline, IoMoonOutline, 
   IoCloseOutline, IoLogOutOutline, IoHappyOutline, IoPaperPlane, IoAttach, 
   IoCheckmarkDoneOutline, IoCheckmarkOutline, IoEllipsisVertical, 
-  IoCallOutline, IoVideocamOutline, IoMicOutline, IoMicOffOutline, IoVideocamOffOutline, IoVolumeHighOutline,
+  IoCallOutline, IoVideocamOutline, IoMicOutline, IoMicOffOutline, IoVolumeHighOutline,
   IoImageOutline, IoPeopleOutline, IoCameraOutline, IoTrashOutline, IoBanOutline, IoLockClosedOutline,
   IoQrCodeOutline, IoShareSocialOutline, IoShieldCheckmarkOutline, IoAddCircle, IoArrowUndoOutline, IoStopCircleOutline,
   IoArrowDownOutline, IoArrowUpOutline, IoLogoGoogle, IoPencil, IoText, IoEyeOutline, IoEyeOffOutline, IoBookmarkOutline,
   IoCopyOutline, IoDownloadOutline, IoMegaphoneOutline, IoArchiveOutline, IoVolumeMuteOutline, IoCheckmarkCircle,
-  IoPinOutline, IoNotificationsOffOutline, IoTimeOutline, IoArrowForwardOutline, IoCashOutline, IoStatsChartOutline, IoRocketOutline, IoWalletOutline,
+  IoPinOutline, IoNotificationsOffOutline, IoTimeOutline, IoArrowForwardOutline, IoCashOutline, IoStatsChartOutline, IoRocketOutline,
   IoBarChartOutline, IoChevronBackOutline, IoChevronForwardOutline, IoFlashOutline, IoHelpCircleOutline
 } from "react-icons/io5";
 
@@ -47,6 +48,13 @@ const blobToBase64 = (blob) => {
   });
 };
 
+const formatTime = (seconds) => { 
+    if (!seconds || isNaN(seconds)) return "00:00";
+    const mins = Math.floor(seconds / 60); 
+    const secs = seconds % 60; 
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`; 
+};
+
 const formatText = (text) => {
     if (!text) return text;
     let formattedText = text.replace(/```([\s\S]*?)```/g, '<div style="background:rgba(0,0,0,0.05); padding:10px; border-radius:8px; font-family:monospace; overflow-x:auto; border: 1px solid rgba(0,0,0,0.1); margin: 5px 0;"><code style="white-space: pre-wrap;">$1</code></div>');
@@ -56,29 +64,7 @@ const formatText = (text) => {
     return <span dangerouslySetInnerHTML={{ __html: formattedText }} />;
 };
 
-const formatTime = (seconds) => { 
-    if (!seconds || isNaN(seconds)) return "00:00";
-    const mins = Math.floor(seconds / 60); 
-    const secs = seconds % 60; 
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`; 
-};
-
-const speakText = (text) => {
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); 
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1.0;
-        utterance.pitch = 1.1;
-        window.speechSynthesis.speak(utterance);
-    } else {
-        alert("Text-to-speech not supported in this browser.");
-    }
-};
-
-// ⚡ PERFORMANCE UPGRADE: Memoized Message Component (Taaki chat fast load ho)
 const MessageBubble = React.memo(({ msg, username, chatWith, currentGroup, isElite, isBroadcast, reactionEmojis, handleReaction, handlePinMessage, setForwardMsg, pushHistoryState, downloadImage, copyToClipboard, speakText, setActiveReactionMsg, activeReactionMsg, setReplyTo, handleReactionSelect, handleViewOnceClick, setViewImage }) => {
-    
-    // Check if message is locked and user hasn't reacted yet
     const isLockedForUser = msg.isLocked && msg.sender !== username && !msg.reactedBy?.includes(username);
 
     return (
@@ -133,7 +119,6 @@ const MessageBubble = React.memo(({ msg, username, chatWith, currentGroup, isEli
                 {msg.replyTo && !isLockedForUser && (<div className="tc-msg-reply-block"><div className="reply-sender">{msg.replySender}</div><div className="reply-text">{msg.replyTo.length > 30 ? msg.replyTo.substring(0,30)+'...' : msg.replyTo}</div></div>)}
                 
                 <div style={{display: 'flex', flexDirection: 'column', gap: '5px'}}>
-                    {/* 🔒 Locked Content Logic */}
                     {isLockedForUser ? (
                         <div className="tc-locked-content" onClick={(e) => { e.stopPropagation(); setActiveReactionMsg(msg.id); }}>
                             <IoLockClosedOutline size={30} color="#faad14" />
@@ -153,8 +138,25 @@ const MessageBubble = React.memo(({ msg, username, chatWith, currentGroup, isEli
                             )}
                             {msg.audio && <audio src={msg.audio} controls className="tc-msg-audio" style={{ outline: 'none' }} />}
                             
-                            {msg.text && msg.text !== "🎙️ Voice Note" && msg.type !== 'poll' && (
-                                <div className="tc-msg-content"><span className="tc-msg-text">{formatText(msg.text)}</span></div>
+                            {msg.type === 'poll' ? (
+                                <div className="tc-poll-container">
+                                    <div className="tc-poll-question"><IoBarChartOutline size={18}/> {msg.text}</div>
+                                    {msg.pollOptions && msg.pollOptions.map((opt, idx) => {
+                                        const totalVotes = msg.pollOptions.reduce((acc, curr) => acc + curr.votes?.length || 0, 0);
+                                        const percent = totalVotes === 0 ? 0 : Math.round(((opt.votes?.length || 0) / totalVotes) * 100);
+                                        const hasVotedThis = opt.votes?.includes(username);
+                                        return (
+                                            <div key={idx} className={`tc-poll-option ${hasVotedThis ? 'voted' : ''}`} onClick={() => handleVote(msg.id, msg.pollOptions, idx)}>
+                                                <div className="tc-poll-bg" style={{width: `${percent}%`}}></div>
+                                                <div className="tc-poll-text">{opt.text}</div>
+                                                <div className="tc-poll-percent">{percent}%</div>
+                                            </div>
+                                        )
+                                    })}
+                                    <div className="tc-poll-total">{msg.pollOptions?.reduce((acc, curr) => acc + curr.votes?.length || 0, 0)} votes</div>
+                                </div>
+                            ) : (
+                                msg.text && msg.text !== "🎙️ Voice Note" && <div className="tc-msg-content"><span className="tc-msg-text">{formatText(msg.text)}</span></div>
                             )}
                         </>
                     )}
@@ -198,6 +200,9 @@ function App() {
   const [sidebarTab, setSidebarTab] = useState('chats'); 
   const [toastMsg, setToastMsg] = useState(null); 
   const [appLoaded, setAppLoaded] = useState(false); 
+  
+  // Custom Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const [showMenuDropdown, setShowMenuDropdown] = useState(false);
   const [activeStoryView, setActiveStoryView] = useState(null);
@@ -257,7 +262,7 @@ function App() {
 
   const [showMagicMenu, setShowMagicMenu] = useState(false);
   const [activeVibe, setActiveVibe] = useState(null);
-  const [floatingEmojis, setFloatingEmojis] = useState([]); // 🎈 LIVE REACTIONS
+  const [floatingEmojis, setFloatingEmojis] = useState([]);
 
   const [imagePreview, setImagePreview] = useState(null);
   const [showImageEditor, setShowImageEditor] = useState(false);
@@ -281,7 +286,6 @@ function App() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const recIntervalRef = useRef(null);
-  let contactTouchTimer = null;
   const [unreadCounts, setUnreadCounts] = useState({});
   const [groups, setGroups] = useState([]); 
   const emojis = useMemo(() => ['😀','😂','😍','🙏','👍','🔥','❤️','💪','🎉', '✨', '🥺', '😎', '💯', '🤔', '🙌', '💡', '🌟'], []);
@@ -289,6 +293,14 @@ function App() {
   const messagesEndRef = useRef(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const safeSearchQuery = searchQuery?.replace(/\s+/g, '')?.toLowerCase() || "";
+
+  const showToast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), 3000); };
+  
+  const requestConfirm = (message, onConfirm) => {
+      setConfirmDialog({ message, onConfirm });
+  };
+
+  const speakText = (text) => { speakTextHelper(text); };
 
   useEffect(() => {
       setReplyTo(null);
@@ -335,10 +347,9 @@ function App() {
     return [user1, user2].sort().join('_');
   }, []);
 
-  const showToast = (msg) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), 3000); };
   const copyToClipboard = (text) => { if(!text) return; navigator.clipboard.writeText(text); showToast("Copied to clipboard! 📋"); };
   const downloadImage = (base64Data, filename = 'download.jpg') => { const link = document.createElement('a'); link.href = base64Data; link.download = filename; document.body.appendChild(link); link.click(); document.body.removeChild(link); showToast("Image downloading... 🖼️"); };
-
+  
   useEffect(() => { if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") { Notification.requestPermission(); } }, []);
 
   useEffect(() => {
@@ -397,6 +408,7 @@ function App() {
     return () => unsubUser();
   }, [username]);
 
+  // HEARTBEAT LOGIC
   useEffect(() => {
       if(user && username) {
           const userRef = doc(db, 'users', username);
@@ -434,7 +446,8 @@ function App() {
           snap.docs.forEach(msgDoc => {
               const data = msgDoc.data();
               if(data.status === 'sent' || data.status === 'delivered') {
-                  if(data.sender !== chatWith.name && data.sender !== username) { counts[data.sender] = (counts[data.sender] || 0) + 1; }
+                  // Fixed performance bottleneck: only calculate unread based on DB status
+                  counts[data.sender] = (counts[data.sender] || 0) + 1;
               }
               setContacts(prevContacts => {
                   if (data.sender !== username && !prevContacts.find(c => c.name === data.sender)) {
@@ -449,7 +462,7 @@ function App() {
           setUnreadCounts(counts);
       });
       return () => unsub();
-  }, [username, chatWith.name]);
+  }, [username]);
 
   useEffect(() => {
     if(!user || !username) return;
@@ -584,9 +597,9 @@ function App() {
     try { await updateDoc(doc(db, 'users', username), { pinnedChats: newList }); } catch(e) {}
   };
 
-  const handleRemoveContact = async (contactName) => {
+  const handleRemoveContact = (contactName) => {
     if(contactName === username) return; 
-    if(window.confirm(`Remove ${contactName} from your chats? This will also delete messages locally.`)) {
+    requestConfirm(`Remove ${contactName} from your chats?`, async () => {
         const newContacts = contacts.filter(c => c.name !== contactName);
         setContacts(newContacts);
         try { await updateDoc(doc(db, 'users', username), { contacts: newContacts }); } catch(e){}
@@ -597,18 +610,18 @@ function App() {
             snap.forEach(document => { deleteDoc(doc(db, 'messages', document.id)).catch(()=>{}); });
         } catch(e) {}
         if(chatWith.name === contactName) { setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); window.history.back(); }
-    }
+    });
   };
 
-  const handleRemoveMember = async (memberName) => {
+  const handleRemoveMember = (memberName) => {
       if (!currentGroup || currentGroup.admin !== username) return;
-      if (window.confirm(`Are you sure you want to remove ${memberName} from this ${chatWith.type}?`)) {
+      requestConfirm(`Are you sure you want to remove ${memberName}?`, async () => {
           const updatedGroup = { ...currentGroup, members: currentGroup.members.filter(m => m !== memberName) };
           const newGroups = groups.map(g => g.name === chatWith.name ? updatedGroup : g);
           setGroups(newGroups); 
           await updateDoc(doc(db, 'users', username), { groups: newGroups }).catch(()=>{});
           showToast(`${memberName} removed successfully! 🗑️`);
-      }
+      });
   };
 
   const approveUser = async (targetUser) => {
@@ -654,16 +667,35 @@ function App() {
     try { updateDoc(doc(db, 'users', username), { privacy: newSettings }); } catch(e) {}
   };
 
-  const deleteMessage = async (msgId) => { if(window.confirm("Delete this message for everyone?")) { try { await deleteDoc(doc(db, 'messages', msgId)); } catch(e) {} } };
-  const clearChat = () => { if(window.confirm(`Are you sure you want to delete all messages here?`)) { currentMessages.forEach(m => { deleteDoc(doc(db, 'messages', m.id)).catch(()=>{}); }); setShowChatInfo(false); window.history.back(); } };
+  const deleteMessage = (msgId) => { 
+      requestConfirm("Delete this message for everyone?", async () => { 
+          try { await deleteDoc(doc(db, 'messages', msgId)); } catch(e) {} 
+      }); 
+  };
+  
+  const clearChat = () => { 
+      requestConfirm(`Are you sure you want to delete all messages here?`, () => { 
+          currentMessages.forEach(m => { deleteDoc(doc(db, 'messages', m.id)).catch(()=>{}); }); 
+          setShowChatInfo(false); 
+          window.history.back(); 
+      }); 
+  };
 
   const toggleBlock = (contactName) => {
     if(contactName === username) return;
-    let newList;
-    if(blockedContacts.includes(contactName)) { newList = blockedContacts.filter(c => c !== contactName); showToast(`${contactName} Unblocked.`); } 
-    else { if(window.confirm(`Block ${contactName}? They won't be able to message you.`)) { newList = [...blockedContacts, contactName]; setShowChatInfo(false); window.history.back(); } else return; }
-    setBlockedContacts(newList); localStorage.setItem('tcBlockedContacts', JSON.stringify(newList));
-    try { updateDoc(doc(db, 'users', username), { blockedContacts: newList }); } catch(e) {}
+    if(blockedContacts.includes(contactName)) { 
+        const newList = blockedContacts.filter(c => c !== contactName);
+        setBlockedContacts(newList); localStorage.setItem('tcBlockedContacts', JSON.stringify(newList));
+        try { updateDoc(doc(db, 'users', username), { blockedContacts: newList }); } catch(e) {}
+        showToast(`${contactName} Unblocked.`); 
+    } else { 
+        requestConfirm(`Block ${contactName}? They won't be able to message you.`, () => {
+            const newList = [...blockedContacts, contactName]; 
+            setBlockedContacts(newList); localStorage.setItem('tcBlockedContacts', JSON.stringify(newList));
+            try { updateDoc(doc(db, 'users', username), { blockedContacts: newList }); } catch(e) {}
+            setShowChatInfo(false); window.history.back();
+        });
+    }
   };
 
   const isBlocked = useMemo(() => blockedContacts.includes(chatWith.name), [blockedContacts, chatWith.name]);
@@ -691,7 +723,6 @@ function App() {
       e.target.value = null;
   };
 
-  // 🎈 Trigger Floating Animation logic
   const triggerFloatingEmoji = (emoji) => {
       const newEmoji = { id: Date.now(), emoji, left: Math.random() * 80 + 10 };
       setFloatingEmojis(prev => [...prev, newEmoji]);
@@ -707,6 +738,7 @@ function App() {
         if(newReaction) triggerFloatingEmoji(newReaction);
     } catch(err) {}
   };
+  
   const handleReactionSelect = async (msgId, emoji) => { 
       try { 
           const msgRef = doc(db, 'messages', msgId);
@@ -714,7 +746,6 @@ function App() {
           
           if(msgSnap.exists()) {
               const msgData = msgSnap.data();
-              // Unlocking Locked Message Logic
               if(msgData.isLocked && !msgData.reactedBy?.includes(username)) {
                   const updatedReactedBy = [...(msgData.reactedBy || []), username];
                   await updateDoc(msgRef, { reaction: emoji, reactedBy: updatedReactedBy });
@@ -792,7 +823,7 @@ function App() {
   const confirmSendImage = async () => {
     if (!imagePreview) return;
     const timeString = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    if (imagePreview.length > 1040000) return alert("Edited Image is too large for database! Try clearing some drawings.");
+    if (imagePreview.length > 1040000) return showToast("Edited Image is too large for database! Try clearing some drawings.");
     setImagePreview(null); setPreviewCaption(''); window.history.back();
 
     try {
@@ -803,7 +834,7 @@ function App() {
       if (isSelfDestruct) {
         setTimeout(() => { deleteDoc(doc(db, 'messages', newMsg.id)).catch(()=>{}); }, 10000); 
       }
-    } catch(err) { alert("Image upload failed! " + err.message); }
+    } catch(err) { showToast("Image upload failed! " + err.message); }
     setReplyTo(null);
   };
 
@@ -829,7 +860,7 @@ function App() {
       
       recorder.start(); setIsRecording(true); setRecTimer(0);
       recIntervalRef.current = setInterval(() => setRecTimer(p => p + 1), 1000);
-    } catch(err) { alert("Mic permission denied or unsupported device!"); setIsRecording(false); }
+    } catch(err) { showToast("Mic permission denied or unsupported device!"); setIsRecording(false); }
   };
 
   useEffect(() => {
@@ -848,11 +879,11 @@ function App() {
     setAudioPreview(null); window.history.back();
     try {
       const base64Audio = await blobToBase64(blob);
-      if (base64Audio.length > 2000000) return alert("Recording is too large!"); 
+      if (base64Audio.length > 2000000) return showToast("Recording is too large!"); 
       const msgData = { text: "🎙️ Voice Note", sender: username, recipient: chatWith.name, chatId: getChatId(username, chatWith.name, chatWith.type === 'group' || chatWith.type === 'channel'), status: "sent", time: timeString };
       await addDoc(collection(db, 'messages'), { ...msgData, audio: base64Audio, participants: [username, chatWith.name], createdAt: serverTimestamp() });
       await ensureMutualContact(chatWith.name, chatWith.type); 
-    } catch(err) { alert("Audio upload failed! " + err.message); }
+    } catch(err) { showToast("Audio upload failed! " + err.message); }
   };
 
   let typingTimeout = useRef(null);
@@ -883,7 +914,7 @@ function App() {
         isSilent: isSilentBroadcast,
         isMystery: customData?.isMystery || false,
         vibe: customData?.vibe || null,
-        isLocked: customData?.isLocked || false, // 🔒 Locked Bonus Feature
+        isLocked: customData?.isLocked || false, 
         reactedBy: [] 
     };
 
@@ -894,7 +925,7 @@ function App() {
       await addDoc(collection(db, 'messages'), { ...msgData, participants: [username, chatWith.name], createdAt: serverTimestamp() }); 
       if(chatWith.name !== username) updateDoc(doc(db, 'users', username), { typingTo: null }).catch(()=>{});
       await ensureMutualContact(chatWith.name, chatWith.type); 
-    } catch(err) { alert("Failed to send message: " + err.message); }
+    } catch(err) { showToast("Failed to send message: " + err.message); }
   }, [input, isBlocked, username, chatWith, replyTo, getChatId, ensureMutualContact, isSilentBroadcast]);
   
   const executeForward = async (targetChat) => {
@@ -1036,33 +1067,8 @@ function App() {
       showToast(`Joined ${chatWith.name} successfully! 🚀`);
   };
 
-  const copyChannelLink = () => {
-    if(currentGroup?.link) { copyToClipboard(currentGroup.link); } 
-    else { const link = `https://telechat.com/join/${chatWith.name.replace(/\s+/g, '')}`; copyToClipboard(link); }
-  };
-
-  const handleAddMember = async () => {
-    if(!newMemberName.trim()) return;
-    const targetName = newMemberName.trim();
-    if(currentGroup.members.includes(targetName)) { showToast("Already added!"); return; }
-    
-    try {
-        const userDoc = await getDoc(doc(db, 'users', targetName));
-        if (!userDoc.exists()) { showToast("User not found!"); return; }
-        
-        const updatedGroup = { ...currentGroup, members: [...currentGroup.members, targetName] };
-        const myNewGroups = groups.map(g => g.name === chatWith.name ? updatedGroup : g);
-        setGroups(myNewGroups); await updateDoc(doc(db, 'users', username), { groups: myNewGroups });
-
-        const targetData = userDoc.data(); const targetGroups = targetData.groups || [];
-        if (!targetGroups.find(g => g.name === chatWith.name)) { await updateDoc(doc(db, 'users', targetName), { groups: [updatedGroup, ...targetGroups] }); }
-
-        setShowAddMember(false); setNewMemberName(''); window.history.back(); showToast(`${targetName} added successfully! 🎉`);
-    } catch(e) { showToast("Error adding member"); }
-  };
-
-  const handleDeleteGroupOrChannel = async () => {
-    if (window.confirm(`Are you sure you want to delete ${chatWith.name}? This will remove it for everyone.`)) {
+  const handleDeleteGroupOrChannel = () => {
+    requestConfirm(`Are you sure you want to delete ${chatWith.name}? This will remove it for everyone.`, async () => {
         const chatIdToDelete = getChatId(username, chatWith.name, true);
         const q = query(collection(db, 'messages'), where("chatId", "==", chatIdToDelete));
         const snap = await getDocs(q); snap.forEach(document => { deleteDoc(doc(db, 'messages', document.id)).catch(()=>{}); });
@@ -1070,30 +1076,22 @@ function App() {
         const newGroups = groups.filter(g => g.name !== chatWith.name);
         setGroups(newGroups); await updateDoc(doc(db, 'users', username), { groups: newGroups });
         setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); showToast("Deleted successfully!");
-    }
+    });
   };
 
-  const handleLeaveGroupOrChannel = async () => {
-    if (window.confirm(`Are you sure you want to leave ${chatWith.name}?`)) {
+  const handleLeaveGroupOrChannel = () => {
+    requestConfirm(`Are you sure you want to leave ${chatWith.name}?`, async () => {
         const updatedGroup = { ...currentGroup, members: currentGroup.members.filter(m => m !== username) };
         const newGroups = groups.map(g => g.name === chatWith.name ? updatedGroup : g);
         setGroups(newGroups); await updateDoc(doc(db, 'users', username), { groups: newGroups });
         setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); setShowChatInfo(false); showToast("You left the chat.");
-    }
+    });
   };
 
-  const handleGroupAvatarUpload = async (e) => {
-    const file = e.target.files[0];
-    if (file && currentGroup) {
-      if(currentGroup.admin !== username) return showToast("Only Admin can change picture!");
-      try { const base64Image = await compressImage(file); setGroups(groups.map(g => g.name === chatWith.name ? { ...g, icon: base64Image } : g)); setChatWith({ ...chatWith, pfp: base64Image }); } catch(err) {}
-    }
-  };
-
-  const handleGoogleSignIn = async () => { setIsLoading(true); try { const provider = new GoogleAuthProvider(); await signInWithPopup(auth, provider); } catch (err) { alert("Google Sign-In Failed: " + err.message); } finally { setIsLoading(false); } };
-  const handleAuth = async (e) => { e.preventDefault(); setIsLoading(true); try { if (isLogin) { await signInWithEmailAndPassword(auth, email, password); } else { await createUserWithEmailAndPassword(auth, email, password); } } catch (err) { alert("Error: " + err.message); } finally { setIsLoading(false); } };
-  const handleForgotPassword = async () => { if (!email) return showToast("Enter your email address first!"); try { await sendPasswordResetEmail(auth, email); showToast("Password reset link sent!"); } catch (err) { alert("Error: " + err.message); } };
-  const handleLogout = async () => { try { await signOut(auth); setShowSettings(false); setShowDrawer(false); setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); } catch(err) { alert(err.message); } };
+  const handleGoogleSignIn = async () => { setIsLoading(true); try { const provider = new GoogleAuthProvider(); await signInWithPopup(auth, provider); } catch (err) { showToast("Google Sign-In Failed"); } finally { setIsLoading(false); } };
+  const handleAuth = async (e) => { e.preventDefault(); setIsLoading(true); try { if (isLogin) { await signInWithEmailAndPassword(auth, email, password); } else { await createUserWithEmailAndPassword(auth, email, password); } } catch (err) { showToast("Error: " + err.message); } finally { setIsLoading(false); } };
+  const handleForgotPassword = async () => { if (!email) return showToast("Enter your email address first!"); try { await sendPasswordResetEmail(auth, email); showToast("Password reset link sent!"); } catch (err) { showToast("Error: " + err.message); } };
+  const handleLogout = async () => { try { await signOut(auth); setShowSettings(false); setShowDrawer(false); setChatWith({ name: "Select a chat", type: "contact", pfp: null, desc: "" }); } catch(err) { showToast(err.message); } };
 
   const handleProfilePicUpload = async (e) => { if(e.target.files[0]){ try { const compressed = await compressImage(e.target.files[0]); setTempPfp(compressed); } catch(err) {} } e.target.value = null; };
 
@@ -1306,7 +1304,6 @@ function App() {
      }
   }, [sidebarTab, username, searchQuery, safeSearchQuery, globalSearchResults, globalChannelResults, groups, contacts, chatWith, unreadCounts, pfp, archivedChats, pinnedChats]);
 
-  // 🌟 LEADERBOARD & TOP FANS 🌟
   const leaderBoard = useMemo(() => {
     if (!currentGroup) return [];
     const memberStats = {};
@@ -1340,18 +1337,32 @@ function App() {
       
       {toastMsg && <div className="tc-toast-notification">{toastMsg}</div>}
 
-      {/* 🌟 VIBE SCREEN TAKEOVER 🌟 */}
+      {/* Confirmation Dialog Box */}
+      {confirmDialog && (
+         <div className="tc-modal-overlay">
+           <div className="tc-modal" style={{padding: '25px', textAlign: 'center', maxWidth: '350px'}}>
+              <h3 style={{marginTop: '0', color: isDarkMode ? 'white' : '#333'}}>Are you sure?</h3>
+              <p style={{color: '#888', fontSize: '15px'}}>{confirmDialog.message}</p>
+              <div style={{display:'flex', gap:'15px', marginTop:'25px'}}>
+                 <button className="tc-btn-secondary" style={{flex: 1}} onClick={()=>setConfirmDialog(null)}>Cancel</button>
+                 <button className="tc-btn-primary" style={{flex: 1, background:'#ff4d4f', border:'none'}} onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}>Yes</button>
+              </div>
+           </div>
+         </div>
+      )}
+
+      {/* VIBE SCREEN TAKEOVER */}
       {activeVibe === 'party' && <div className="vibe-takeover party">🎉 LET'S PARTY! 🎊</div>}
       {activeVibe === 'shake' && <div className="vibe-takeover shake">💣 BOOM!</div>}
 
-      {/* 🎈 LIVE FLOATING REACTIONS */}
+      {/* LIVE FLOATING REACTIONS */}
       <div className="tc-floating-reactions-container">
           {floatingEmojis.map(item => (
               <div key={item.id} className="floating-emoji" style={{left: `${item.left}%`}}>{item.emoji}</div>
           ))}
       </div>
 
-      {/* 🌟 Milestone Celebration Animation 🌟 */}
+      {/* Milestone Celebration Animation */}
       {showMilestone && (
           <div className="tc-milestone-overlay">
               <div className="milestone-text">🎉 New Milestone Reached! 🎉</div>
@@ -1361,7 +1372,7 @@ function App() {
           </div>
       )}
 
-      {/* 🌟 Poll Creator Modal 🌟 */}
+      {/* Poll Creator Modal */}
       {showPollCreator && (
           <div className="tc-modal-overlay" onClick={() => {setShowPollCreator(false); window.history.back();}}>
               <div className="tc-modal" onClick={e => e.stopPropagation()}>
@@ -1381,7 +1392,7 @@ function App() {
           </div>
       )}
 
-      {/* 🌟 Coming Soon Modal 🌟 */}
+      {/* Coming Soon Modal */}
       {(showMonetization || showAnalytics) && (
           <div className="tc-modal-overlay" onClick={() => {setShowMonetization(false); setShowAnalytics(false); window.history.back();}}>
               <div className="tc-modal tc-coming-soon-modal" onClick={e => e.stopPropagation()}>
@@ -1804,29 +1815,20 @@ function App() {
         </div>
       )}
 
+      {}
       {!user ? (
-        <div className="tc-auth-container">
-            <div className="tc-auth-box">
-              <h2>Telechat</h2>
-              <p>{isLogin ? "Sign in to continue" : "Create your account"}</p>
-              
-              <form onSubmit={handleAuth} className="tc-auth-form">
-                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="tc-auth-input" placeholder="Email" required />
-                 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="tc-auth-input" placeholder="Password" required minLength="6" />
-                 <button type="submit" className="tc-btn-primary" disabled={isLoading}>{isLoading ? "Processing..." : (isLogin ? "Log In" : "Sign Up")}</button>
-              </form>
-
-              <div className="tc-auth-divider"><span>OR</span></div>
-              <button onClick={handleGoogleSignIn} className="tc-btn-secondary google-btn" disabled={isLoading}>
-                 <IoLogoGoogle size={20} style={{marginRight: '10px'}} /> Continue with Google
-              </button>
-              
-              <div className="tc-auth-links" style={{marginTop: '25px'}}>
-                {isLogin && ( <span onClick={handleForgotPassword} style={{color: '#ff4d4f', fontWeight: 'bold', display: 'block', marginBottom: '10px'}}>Forgot Password?</span> )}
-                <span onClick={() => setIsLogin(!isLogin)}>{isLogin ? "Don't have an account? Sign Up" : "Already have an account? Log In"}</span>
-              </div>
-            </div>
-        </div>
+          <Auth 
+              email={email} 
+              setEmail={setEmail} 
+              password={password} 
+              setPassword={setPassword} 
+              isLogin={isLogin} 
+              setIsLogin={setIsLogin} 
+              isLoading={isLoading} 
+              handleAuth={handleAuth} 
+              handleGoogleSignIn={handleGoogleSignIn} 
+              handleForgotPassword={handleForgotPassword} 
+          />
       ) : (
       <>
         <div className="tc-sidebar">
@@ -1898,13 +1900,11 @@ function App() {
                     <IoEllipsisVertical size={24} className="tc-h-icon" onClick={() => chatWith.name !== "Select a chat" && setShowMenuDropdown(!showMenuDropdown)} />
                     {showMenuDropdown && (
                         <div className="tc-dropdown-menu">
-                           
                            {chatWith.name !== "Select a chat" && (
                                <div onClick={() => { togglePinChat(chatWith.name); setShowMenuDropdown(false); }}>
                                    {pinnedChats.includes(chatWith.name) ? 'Unpin from Top' : 'Pin to Top'}
                                </div>
                            )}
-
                            {chatWith.name !== username && chatWith.name !== "Select a chat" && (
                                <div onClick={() => { toggleArchive(chatWith.name); setShowMenuDropdown(false); }}>
                                    {archivedChats.includes(chatWith.name) ? 'Unarchive Chat' : 'Archive Chat'}
